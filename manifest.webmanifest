@@ -1,6 +1,6 @@
 {
-  "name": "MiQR",
-  "short_name": "MiQR",
+  "name": "Mi QR",
+  "short_name": "Mi QR",
   "description": "Lee códigos QR desde fotos e imágenes. Todo se procesa en tu dispositivo, sin conexión.",
   "lang": "es",
   "start_url": "./index.html",
