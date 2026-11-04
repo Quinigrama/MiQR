@@ -1,6 +1,6 @@
 {
-  "name": "Lector QR Local",
-  "short_name": "Lector QR",
+  "name": "MiQR",
+  "short_name": "MiQR",
   "description": "Lee códigos QR desde fotos e imágenes. Todo se procesa en tu dispositivo, sin conexión.",
   "lang": "es",
   "start_url": "./index.html",
@@ -63,5 +63,6 @@
         }
       ]
     }
-  ]
+  ],
+  "id": "./"
 }

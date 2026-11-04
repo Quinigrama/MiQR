@@ -1,6 +1,6 @@
 // Service worker: guarda la app en caché para que funcione sin conexión
 // y recibe imágenes compartidas desde la galería (Android).
-const CACHE = 'lector-qr-v2';
+const CACHE = 'miqr-v3';
 const ARCHIVOS = [
   './',
   './index.html',

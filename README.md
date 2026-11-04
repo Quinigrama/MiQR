@@ -38,4 +38,4 @@ Las imágenes se analizan en el navegador. No se envía nada a ningún servidor 
 | `qrcode.js` | Generación de QR ([qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 1.4.4, licencia MIT) |
 | `icon-*.png` | Iconos de la app |
 
-Para publicar una nueva versión, cambia `CACHE` en `sw.js` (por ejemplo `lector-qr-v3`) para que los móviles descarguen los archivos nuevos.
+Para publicar una nueva versión, cambia `CACHE` en `sw.js` (por ejemplo `miqr-v4`) para que los móviles descarguen los archivos nuevos.
