@@ -1,0 +1,869 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lector QR Local</title>
+<meta name="description" content="Lee códigos QR desde fotos e imágenes. Todo se procesa en tu dispositivo.">
+<meta name="theme-color" content="#0f3d3e" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1f20" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lector QR">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+/* Concepto: una «etiqueta de envío» — papel crudo, tinta verde petróleo, sello ámbar.
+   Una sola columna estrecha pensada para el pulgar. Sin fuentes externas: todo funciona sin red. */
+:root {
+  --papel: #f4efe2;
+  --papel-2: #ebe4d2;
+  --tinta: #0f3d3e;
+  --tinta-suave: #4a6463;
+  --linea: #cfc6ae;
+  --sello: #c97f12;
+  --sello-fondo: #fbe9c8;
+  --ok: #2c7a4b;
+  --error: #b23a2b;
+  --superficie: #fffdf7;
+  --f-display: "Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", system-ui, sans-serif;
+  --f-texto: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --papel: #0b1f20; --papel-2: #12292a; --tinta: #e9e3d1; --tinta-suave: #9db3b0;
+    --linea: #29403f; --sello: #f0b048; --sello-fondo: #3a2c12; --ok: #6cc28f; --error: #ef8170;
+    --superficie: #102627; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --papel: #0b1f20; --papel-2: #12292a; --tinta: #e9e3d1; --tinta-suave: #9db3b0;
+  --linea: #29403f; --sello: #f0b048; --sello-fondo: #3a2c12; --ok: #6cc28f; --error: #ef8170;
+  --superficie: #102627; color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--papel); color: var(--tinta);
+  font: 16px/1.5 var(--f-texto);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+[hidden] { display: none !important; }
+img, canvas { max-width: 100%; }
+.envoltura {
+  max-width: 560px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.marca { display: flex; align-items: center; gap: 10px; }
+.marca img { width: 38px; height: 38px; border-radius: 9px; }
+h1 { font: 700 1.6rem/1 var(--f-display); letter-spacing: .01em; margin: 0; text-transform: uppercase; }
+.etiqueta-local {
+  font: 600 .7rem/1 var(--f-texto); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--sello); border: 1.5px solid var(--sello); border-radius: 4px; padding: 5px 7px;
+  transform: rotate(-3deg); white-space: nowrap;
+}
+.zona {
+  border: 2px dashed var(--linea); border-radius: 14px; background: var(--superficie);
+  padding: 22px 18px; display: flex; flex-direction: column; gap: 14px; align-items: stretch;
+  transition: border-color .15s, background .15s;
+}
+.zona.encima { border-color: var(--sello); background: var(--sello-fondo); }
+.zona p { margin: 0; color: var(--tinta-suave); font-size: .92rem; text-align: center; }
+.botones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn {
+  appearance: none; border: 0; border-radius: 10px; cursor: pointer;
+  font: 600 1rem/1.2 var(--f-texto); padding: 14px 12px; min-height: 52px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--tinta); color: var(--papel); text-decoration: none;
+}
+.btn.secundario { background: transparent; color: var(--tinta); border: 1.5px solid var(--tinta); }
+.btn.mini { min-height: 36px; padding: 7px 12px; font-size: .88rem; border-radius: 8px; }
+.btn:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--sello); outline-offset: 2px; }
+.btn svg { width: 20px; height: 20px; flex: none; }
+input[type=file] { display: none; }
+
+.estado { font-size: .92rem; color: var(--tinta-suave); min-height: 1.4em; text-align: center; }
+.estado.error { color: var(--error); }
+
+h2 {
+  font: 700 .78rem/1 var(--f-texto); letter-spacing: .12em; text-transform: uppercase;
+  color: var(--tinta-suave); margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+}
+.seccion { display: flex; flex-direction: column; gap: 12px; }
+
+.resultado {
+  background: var(--superficie); border: 1.5px solid var(--linea); border-radius: 14px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.resultado .vista { background: var(--papel-2); display: flex; justify-content: center; padding: 12px; }
+.resultado canvas { max-height: 260px; width: auto; border-radius: 6px; }
+.resultado .cuerpo { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tipo {
+  align-self: flex-start; font: 700 .72rem/1 var(--f-texto); letter-spacing: .1em; text-transform: uppercase;
+  background: var(--sello-fondo); color: var(--sello); padding: 6px 9px; border-radius: 4px;
+}
+.contenido {
+  font: .95rem/1.5 var(--f-mono); white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  margin: 0; padding: 12px; background: var(--papel); border-radius: 8px; max-height: 240px; overflow: auto;
+}
+.campos { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 0; font-size: .95rem; }
+.campos dt { color: var(--tinta-suave); }
+.campos dd { margin: 0; font-family: var(--f-mono); overflow-wrap: anywhere; min-width: 0; }
+.acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.sin-qr { padding: 16px; color: var(--error); font-size: .95rem; }
+
+.historial { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.historial li {
+  display: grid; grid-template-columns: 48px 1fr; gap: 12px; align-items: center;
+  padding: 10px 0; border-bottom: 1px solid var(--linea); cursor: pointer;
+}
+.historial li:last-child { border-bottom: 0; }
+.historial img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; background: var(--papel-2); }
+.historial .txt { min-width: 0; }
+.historial .linea1 { font-family: var(--f-mono); font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.historial .linea2 { font-size: .78rem; color: var(--tinta-suave); font-variant-numeric: tabular-nums; }
+.vacio { color: var(--tinta-suave); font-size: .92rem; margin: 0; }
+
+.aviso {
+  background: var(--sello-fondo); border-radius: 12px; padding: 14px 16px; font-size: .92rem;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.aviso p { margin: 0; }
+.confirmar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .9rem; }
+footer { font-size: .8rem; color: var(--tinta-suave); text-align: center; }
+
+/* Pestañas */
+.pestanas {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+  background: var(--papel-2); border-radius: 12px; border: 1.5px solid var(--linea);
+}
+.pestanas button {
+  appearance: none; border: 0; background: transparent; color: var(--tinta-suave); cursor: pointer;
+  font: 700 .95rem/1 var(--f-texto); letter-spacing: .02em; padding: 12px 8px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.pestanas button svg { width: 18px; height: 18px; }
+.pestanas button[aria-selected="true"] { background: var(--superficie); color: var(--tinta); box-shadow: 0 1px 3px rgb(0 0 0 / .12); }
+.vista-panel { display: flex; flex-direction: column; gap: 22px; }
+
+/* Crear */
+.tipos { display: flex; flex-wrap: wrap; gap: 8px; }
+.tipos button {
+  appearance: none; cursor: pointer; border: 1.5px solid var(--linea); background: var(--superficie); color: var(--tinta);
+  font: 600 .88rem/1 var(--f-texto); padding: 10px 13px; border-radius: 999px;
+}
+.tipos button[aria-pressed="true"] { background: var(--tinta); color: var(--papel); border-color: var(--tinta); }
+.formulario { display: flex; flex-direction: column; gap: 12px; }
+.campo { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.campo label, .campo .rotulo { font-size: .82rem; font-weight: 600; color: var(--tinta-suave); }
+.campo input, .campo textarea, .campo select {
+  font: 1rem/1.4 var(--f-texto); color: var(--tinta); background: var(--superficie);
+  border: 1.5px solid var(--linea); border-radius: 9px; padding: 11px 12px; width: 100%; min-width: 0;
+}
+.campo textarea { min-height: 96px; resize: vertical; font-family: var(--f-mono); font-size: .95rem; }
+.campo input:focus, .campo textarea:focus, .campo select:focus { outline: none; border-color: var(--sello); }
+.campo input[type=color] { padding: 4px; height: 46px; }
+.campo input[type=checkbox] { width: auto; }
+.fila2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: .92rem; }
+.lienzo-qr {
+  background: var(--superficie); border: 1.5px solid var(--linea); border-radius: 14px;
+  padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.lienzo-qr .marco { background: #fff; padding: 10px; border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.lienzo-qr img { width: min(260px, 70vw); height: auto; image-rendering: pixelated; display: block; }
+.lienzo-qr .pie { color: #111; font: 600 .95rem/1.2 var(--f-texto); text-align: center; max-width: 260px; overflow-wrap: anywhere; }
+.lienzo-qr .datos { font-size: .8rem; color: var(--tinta-suave); font-variant-numeric: tabular-nums; text-align: center; }
+.lienzo-qr .vacio-qr { color: var(--tinta-suave); font-size: .92rem; padding: 40px 10px; text-align: center; }
+.acciones.grandes .btn { flex: 1 1 140px; }
+details.opciones { border-top: 1px solid var(--linea); padding-top: 12px; }
+details.opciones summary { cursor: pointer; font-weight: 700; font-size: .88rem; color: var(--tinta-suave); text-transform: uppercase; letter-spacing: .1em; padding: 4px 0; }
+details.opciones[open] summary { margin-bottom: 12px; }
+details.opciones .formulario { gap: 12px; }
+
+/* Zona de impresión: invisible en pantalla, lo único que sale en papel */
+#zonaImpresion { display: none; }
+@page { margin: 12mm; }
+@media print {
+  html, body { background: #fff !important; color: #000 !important; padding: 0 !important; }
+  body > *:not(#zonaImpresion) { display: none !important; }
+  #zonaImpresion { display: flex !important; flex-wrap: wrap; gap: 8mm; justify-content: center; align-content: flex-start; }
+  #zonaImpresion .copia { display: flex; flex-direction: column; align-items: center; gap: 2mm; break-inside: avoid; page-break-inside: avoid; }
+  #zonaImpresion .copia.recorte { outline: 0.2mm dashed #999; outline-offset: 3mm; }
+  #zonaImpresion img { display: block; }
+  #zonaImpresion .pie { font: 600 11pt/1.2 system-ui, sans-serif; text-align: center; color: #000; overflow-wrap: anywhere; }
+}
+.toast {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--tinta); color: var(--papel); padding: 10px 16px; border-radius: 999px; font-size: .9rem;
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.toast.visible { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="envoltura">
+  <header>
+    <div class="marca">
+      <img src="icon-192.png" alt="">
+      <h1>Lector QR</h1>
+    </div>
+    <span class="etiqueta-local" title="Las imágenes no salen de tu dispositivo">100 % local</span>
+  </header>
+
+  <div class="aviso" id="avisoInstalar" hidden>
+    <p id="textoInstalar">Instala la app para usarla sin conexión, como una aplicación más.</p>
+    <div class="acciones">
+      <button class="btn mini" id="btnInstalar" type="button">Instalar</button>
+      <button class="btn mini secundario" id="btnCerrarAviso" type="button">Ahora no</button>
+    </div>
+  </div>
+
+  <nav class="pestanas" role="tablist" aria-label="Modo">
+    <button type="button" role="tab" id="tabLeer" aria-controls="panelLeer" aria-selected="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>
+      Leer QR
+    </button>
+    <button type="button" role="tab" id="tabCrear" aria-controls="panelCrear" aria-selected="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"/></svg>
+      Crear QR
+    </button>
+  </nav>
+
+  <!-- ================= CREAR ================= -->
+  <div class="vista-panel" id="panelCrear" role="tabpanel" aria-labelledby="tabCrear" hidden>
+    <section class="seccion">
+      <h2>¿Qué quieres guardar en el QR?</h2>
+      <div class="tipos" id="tipos">
+        <button type="button" data-tipo="texto" aria-pressed="true">Texto o enlace</button>
+        <button type="button" data-tipo="wifi" aria-pressed="false">Wi-Fi</button>
+        <button type="button" data-tipo="contacto" aria-pressed="false">Contacto</button>
+        <button type="button" data-tipo="tel" aria-pressed="false">Teléfono</button>
+        <button type="button" data-tipo="correo" aria-pressed="false">Correo</button>
+        <button type="button" data-tipo="sms" aria-pressed="false">SMS</button>
+      </div>
+    </section>
+
+    <form class="formulario" id="formCrear" autocomplete="off">
+      <div data-para="texto" class="formulario">
+        <div class="campo"><label for="cTexto">Texto o dirección web</label>
+          <textarea id="cTexto" placeholder="https://www.ejemplo.es">Hola 👋 Este código lo he creado con Lector QR.</textarea></div>
+      </div>
+      <div data-para="wifi" class="formulario" hidden>
+        <div class="campo"><label for="cWifiRed">Nombre de la red (SSID)</label><input id="cWifiRed" placeholder="MiWiFi_Casa"></div>
+        <div class="campo"><label for="cWifiClave">Contraseña</label><input id="cWifiClave" placeholder="contraseña de la red"></div>
+        <div class="fila2">
+          <div class="campo"><label for="cWifiSeg">Seguridad</label>
+            <select id="cWifiSeg"><option value="WPA">WPA / WPA2 / WPA3</option><option value="WEP">WEP</option><option value="nopass">Abierta (sin clave)</option></select></div>
+          <div class="campo"><span class="rotulo">Red oculta</span><label class="check"><input type="checkbox" id="cWifiOculta"> Sí</label></div>
+        </div>
+      </div>
+      <div data-para="contacto" class="formulario" hidden>
+        <div class="fila2">
+          <div class="campo"><label for="cNombre">Nombre</label><input id="cNombre" autocomplete="off"></div>
+          <div class="campo"><label for="cApellidos">Apellidos</label><input id="cApellidos"></div>
+        </div>
+        <div class="fila2">
+          <div class="campo"><label for="cTelC">Teléfono</label><input id="cTelC" type="tel" inputmode="tel"></div>
+          <div class="campo"><label for="cEmailC">Correo</label><input id="cEmailC" type="email" inputmode="email"></div>
+        </div>
+        <div class="fila2">
+          <div class="campo"><label for="cEmpresa">Empresa</label><input id="cEmpresa"></div>
+          <div class="campo"><label for="cCargo">Cargo</label><input id="cCargo"></div>
+        </div>
+        <div class="campo"><label for="cWeb">Web</label><input id="cWeb" type="url" inputmode="url"></div>
+        <div class="campo"><label for="cDir">Dirección</label><input id="cDir"></div>
+      </div>
+      <div data-para="tel" class="formulario" hidden>
+        <div class="campo"><label for="cTel">Número de teléfono</label><input id="cTel" type="tel" inputmode="tel" placeholder="+34 600 000 000"></div>
+      </div>
+      <div data-para="correo" class="formulario" hidden>
+        <div class="campo"><label for="cPara">Para</label><input id="cPara" type="email" inputmode="email" placeholder="nombre@correo.es"></div>
+        <div class="campo"><label for="cAsunto">Asunto</label><input id="cAsunto"></div>
+        <div class="campo"><label for="cCuerpo">Mensaje</label><textarea id="cCuerpo"></textarea></div>
+      </div>
+      <div data-para="sms" class="formulario" hidden>
+        <div class="campo"><label for="cSmsTel">Número</label><input id="cSmsTel" type="tel" inputmode="tel"></div>
+        <div class="campo"><label for="cSmsTxt">Mensaje</label><textarea id="cSmsTxt"></textarea></div>
+      </div>
+
+      <div class="campo"><label for="cPie">Texto debajo del QR (opcional)</label>
+        <input id="cPie" placeholder="Ej.: «Escanéame para conectarte al Wi-Fi»"></div>
+
+      <details class="opciones">
+        <summary>Aspecto e impresión</summary>
+        <div class="formulario">
+          <div class="fila2">
+            <div class="campo"><label for="cColor">Color del código</label><input id="cColor" type="color" value="#000000"></div>
+            <div class="campo"><label for="cNivel">Resistencia a daños</label>
+              <select id="cNivel"><option value="L">Baja (7 %)</option><option value="M" selected>Media (15 %)</option><option value="Q">Alta (25 %)</option><option value="H">Máxima (30 %)</option></select></div>
+          </div>
+          <div class="fila2">
+            <div class="campo"><label for="cTam">Tamaño impreso</label>
+              <select id="cTam"><option value="2,5">2,5 cm</option><option value="4">4 cm</option><option value="6" selected>6 cm</option><option value="9">9 cm</option><option value="12">12 cm</option><option value="18">18 cm (media hoja)</option></select></div>
+            <div class="campo"><label for="cCopias">Copias en la hoja</label>
+              <select id="cCopias"><option value="1" selected>1</option><option value="2">2</option><option value="4">4</option><option value="6">6</option><option value="9">9</option><option value="12">12</option><option value="20">20</option><option value="max">Llenar la hoja</option></select></div>
+          </div>
+          <label class="check"><input type="checkbox" id="cRecorte" checked> Marcar líneas de recorte</label>
+        </div>
+      </details>
+    </form>
+
+    <section class="lienzo-qr" aria-live="polite">
+      <div class="marco" id="marcoQR" hidden>
+        <img id="imgQR" alt="Código QR generado">
+        <div class="pie" id="pieQR" hidden></div>
+      </div>
+      <div class="vacio-qr" id="vacioQR" hidden>Rellena los datos y el código aparecerá aquí.</div>
+      <div class="datos" id="datosQR"></div>
+    </section>
+
+    <div class="acciones grandes">
+      <button class="btn" type="button" id="btnImprimir">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 9V3h10v6M7 17H4v-7h16v7h-3M7 14h10v7H7z"/></svg>
+        Imprimir
+      </button>
+      <button class="btn secundario" type="button" id="btnPNG">Guardar PNG</button>
+      <button class="btn secundario" type="button" id="btnSVG">Guardar SVG</button>
+      <button class="btn secundario" type="button" id="btnCompartirQR" hidden>Compartir</button>
+    </div>
+  </div>
+
+  <!-- ================= LEER ================= -->
+  <div class="vista-panel" id="panelLeer" role="tabpanel" aria-labelledby="tabLeer">
+  <section class="zona" id="zona" aria-label="Cargar imágenes">
+    <div class="botones">
+      <label class="btn" for="inCamara">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        Hacer foto
+      </label>
+      <label class="btn secundario" for="inGaleria">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-8 9"/></svg>
+        Elegir fotos
+      </label>
+    </div>
+    <input type="file" id="inCamara" accept="image/*" capture="environment">
+    <input type="file" id="inGaleria" accept="image/*" multiple>
+    <p>También puedes arrastrar imágenes aquí o pegarlas (Ctrl+V). Puedes elegir varias a la vez.</p>
+  </section>
+
+  <div class="estado" id="estado" role="status" aria-live="polite"></div>
+
+  <section class="seccion" id="secResultados" hidden>
+    <h2>Resultados</h2>
+    <div id="resultados" class="seccion"></div>
+  </section>
+
+  <section class="seccion">
+    <h2>
+      <span>Historial</span>
+      <button class="btn mini secundario" id="btnBorrar" type="button">Borrar</button>
+    </h2>
+    <div class="confirmar" id="confirmarBorrado" hidden>
+      <span>¿Borrar todo el historial?</span>
+      <button class="btn mini" id="btnSiBorrar" type="button">Sí, borrar</button>
+      <button class="btn mini secundario" id="btnNoBorrar" type="button">Cancelar</button>
+    </div>
+    <ul class="historial" id="historial"></ul>
+    <p class="vacio" id="historialVacio">Aún no has leído ningún código. Se guardarán aquí, solo en este dispositivo.</p>
+  </section>
+  </div>
+
+  <footer>Las imágenes se analizan en el propio navegador. No se suben a ningún servidor.</footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<div id="zonaImpresion" aria-hidden="true"></div>
+
+<script src="jsQR.js"></script>
+<script src="qrcode.js"></script>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const CLAVE_HIST = 'lectorqr-historial-v1';
+  const MAX_HIST = 60;
+
+  // ---------- Utilidades ----------
+  let toastT;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('visible');
+    clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('visible'), 1800);
+  }
+  function estado(msg, esError) { const e = $('estado'); e.textContent = msg || ''; e.classList.toggle('error', !!esError); }
+  async function copiar(texto) {
+    try { await navigator.clipboard.writeText(texto); toast('Copiado'); }
+    catch {
+      const ta = document.createElement('textarea'); ta.value = texto; document.body.appendChild(ta);
+      ta.select(); try { document.execCommand('copy'); toast('Copiado'); } catch { toast('No se pudo copiar'); }
+      ta.remove();
+    }
+  }
+  function el(tag, attrs = {}, ...hijos) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') n.className = v; else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+    }
+    for (const h of hijos) if (h != null) n.append(h);
+    return n;
+  }
+
+  // ---------- Carga de imagen ----------
+  async function cargarImagen(archivo) {
+    if ('createImageBitmap' in window) {
+      try { return await createImageBitmap(archivo, { imageOrientation: 'from-image' }); } catch {}
+    }
+    return new Promise((ok, mal) => {
+      const url = URL.createObjectURL(archivo); const img = new Image();
+      img.onload = () => { ok(img); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+      img.onerror = () => { URL.revokeObjectURL(url); mal(new Error('No se pudo abrir la imagen')); };
+      img.src = url;
+    });
+  }
+  function dibujar(img, maxLado) {
+    const w = img.width, h = img.height; const f = Math.min(1, maxLado / Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(w * f); c.height = Math.round(h * f);
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingQuality = 'high'; ctx.drawImage(img, 0, 0, c.width, c.height);
+    return { c, ctx, f };
+  }
+  function contrastar(datos) {
+    // Pasa a gris y estira el histograma: ayuda con fotos oscuras o con reflejos
+    const d = datos.data; let min = 255, max = 0;
+    for (let i = 0; i < d.length; i += 4) { const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000; d[i] = g; if (g < min) min = g; if (g > max) max = g; }
+    const r = Math.max(1, max - min);
+    for (let i = 0; i < d.length; i += 4) { const v = ((d[i] - min) * 255) / r; d[i] = d[i + 1] = d[i + 2] = v; }
+    return datos;
+  }
+
+  // ---------- Detección ----------
+  let detectorNativo = null;
+  (async () => {
+    try {
+      if ('BarcodeDetector' in window) {
+        const formatos = await BarcodeDetector.getSupportedFormats();
+        if (formatos.includes('qr_code')) detectorNativo = new BarcodeDetector({ formats: ['qr_code'] });
+      }
+    } catch {}
+  })();
+
+  async function detectar(img) {
+    const encontrados = [];
+    // 1) Detector del sistema (rápido, encuentra varios QR a la vez)
+    if (detectorNativo) {
+      try {
+        const r = await detectorNativo.detect(img);
+        for (const b of r) if (b.rawValue) encontrados.push({ texto: b.rawValue, puntos: b.cornerPoints });
+        if (encontrados.length) return encontrados;
+      } catch {}
+    }
+    // 2) jsQR a varias escalas, con y sin contraste; tras cada hallazgo se tapa la zona y se busca otro
+    const escalas = [1200, 800, 1800, 500, 2600];
+    for (const esc of escalas) {
+      for (const modo of ['normal', 'contraste']) {
+        const { ctx, c, f } = dibujar(img, esc);
+        const lista = [];
+        for (let intento = 0; intento < 6; intento++) {
+          let datos = ctx.getImageData(0, 0, c.width, c.height);
+          if (modo === 'contraste') datos = contrastar(datos);
+          const r = jsQR(datos.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
+          if (!r || !r.data && !(r.binaryData && r.binaryData.length)) break;
+          const L = r.location;
+          const pts = [L.topLeftCorner, L.topRightCorner, L.bottomRightCorner, L.bottomLeftCorner];
+          if (lista.some((x) => x.texto === r.data)) break;
+          lista.push({ texto: r.data, puntos: pts.map((p) => ({ x: p.x / f, y: p.y / f })) });
+          ctx.fillStyle = '#808080'; ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+          pts.slice(1).forEach((p) => ctx.lineTo(p.x, p.y)); ctx.closePath(); ctx.fill();
+        }
+        if (lista.length) return lista;
+      }
+    }
+    return encontrados;
+  }
+
+  // ---------- Interpretación del contenido ----------
+  function partirCampos(cuerpo) {
+    // Formato tipo WIFI:S:x;T:y;P:z;; con escapes \; \, \: \\
+    const campos = {}; let clave = '', valor = '', enValor = false;
+    for (let i = 0; i < cuerpo.length; i++) {
+      const ch = cuerpo[i];
+      if (ch === '\\' && i + 1 < cuerpo.length) { (enValor ? (valor += cuerpo[++i]) : (clave += cuerpo[++i])); continue; }
+      if (!enValor && ch === ':') { enValor = true; continue; }
+      if (ch === ';') { if (clave) campos[clave.toUpperCase()] = valor; clave = ''; valor = ''; enValor = false; continue; }
+      enValor ? (valor += ch) : (clave += ch);
+    }
+    if (clave) campos[clave.toUpperCase()] = valor;
+    return campos;
+  }
+  function interpretar(t) {
+    const s = t.trim();
+    if (/^https?:\/\//i.test(s)) return { tipo: 'Enlace web', abrir: s };
+    if (/^WIFI:/i.test(s)) {
+      const c = partirCampos(s.slice(5));
+      const filas = [['Red', c.S || '—'], ['Seguridad', c.T || 'Abierta'], ['Contraseña', c.P || '—']];
+      if (c.H === 'true') filas.push(['Oculta', 'Sí']);
+      return { tipo: 'Wi-Fi', filas, copiarExtra: c.P ? ['Copiar contraseña', c.P] : null };
+    }
+    if (/^mailto:/i.test(s)) return { tipo: 'Correo', filas: [['Para', decodeURIComponent(s.slice(7).split('?')[0])]], abrir: s };
+    if (/^MATMSG:/i.test(s)) { const c = partirCampos(s.slice(7)); return { tipo: 'Correo', filas: [['Para', c.TO || '—'], ['Asunto', c.SUB || '—'], ['Texto', c.BODY || '—']] }; }
+    if (/^tel:/i.test(s)) return { tipo: 'Teléfono', filas: [['Número', s.slice(4)]], abrir: s };
+    if (/^(SMSTO|SMS):/i.test(s)) { const p = s.split(':'); return { tipo: 'SMS', filas: [['Número', p[1] || '—'], ['Mensaje', p.slice(2).join(':') || '—']] }; }
+    if (/^geo:/i.test(s)) {
+      const [lat, lon] = s.slice(4).split('?')[0].split(',');
+      return { tipo: 'Ubicación', filas: [['Latitud', lat], ['Longitud', lon]], abrir: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}` };
+    }
+    if (/^BEGIN:VCARD/i.test(s)) {
+      const filas = []; const mapa = { FN: 'Nombre', ORG: 'Empresa', TITLE: 'Cargo', TEL: 'Teléfono', EMAIL: 'Correo', URL: 'Web', ADR: 'Dirección', NOTE: 'Nota' };
+      for (const linea of s.split(/\r?\n/)) {
+        const m = linea.match(/^([A-Z]+)[^:]*:(.*)$/i); if (!m) continue;
+        const k = m[1].toUpperCase(); if (mapa[k]) filas.push([mapa[k], m[2].replace(/;+/g, ' ').trim()]);
+      }
+      return { tipo: 'Contacto', filas };
+    }
+    if (/^MECARD:/i.test(s)) {
+      const c = partirCampos(s.slice(7));
+      return { tipo: 'Contacto', filas: [['Nombre', (c.N || '').replace(',', ' ')], ['Teléfono', c.TEL], ['Correo', c.EMAIL], ['Dirección', c.ADR]].filter((f) => f[1]) };
+    }
+    if (/^BEGIN:VEVENT|BEGIN:VCALENDAR/i.test(s)) return { tipo: 'Evento' };
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return { tipo: 'Enlace' };
+    if (/^www\./i.test(s)) return { tipo: 'Enlace web', abrir: 'https://' + s };
+    return { tipo: 'Texto' };
+  }
+
+  // ---------- Pintar resultados ----------
+  function vistaConMarcas(img, lista) {
+    const { c, ctx, f } = dibujar(img, 900);
+    ctx.lineWidth = Math.max(3, c.width / 120);
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--sello').trim() || '#c97f12';
+    for (const r of lista) {
+      if (!r.puntos || r.puntos.length < 4) continue;
+      ctx.beginPath(); ctx.moveTo(r.puntos[0].x * f, r.puntos[0].y * f);
+      r.puntos.slice(1).forEach((p) => ctx.lineTo(p.x * f, p.y * f)); ctx.closePath(); ctx.stroke();
+    }
+    return c;
+  }
+  function miniatura(img) {
+    const { c } = dibujar(img, 120);
+    try { return c.toDataURL('image/jpeg', 0.7); } catch { return ''; }
+  }
+  function tarjetaContenido(texto) {
+    const info = interpretar(texto);
+    const cuerpo = el('div', { class: 'cuerpo' }, el('span', { class: 'tipo' }, info.tipo));
+    if (info.filas && info.filas.length) {
+      const dl = el('dl', { class: 'campos' });
+      for (const [k, v] of info.filas) dl.append(el('dt', {}, k), el('dd', {}, v));
+      cuerpo.append(dl);
+    }
+    cuerpo.append(el('pre', { class: 'contenido' }, texto));
+    const acc = el('div', { class: 'acciones' },
+      el('button', { class: 'btn mini', type: 'button', onclick: () => copiar(texto) }, 'Copiar'));
+    if (info.copiarExtra) acc.append(el('button', { class: 'btn mini secundario', type: 'button', onclick: () => copiar(info.copiarExtra[1]) }, info.copiarExtra[0]));
+    if (info.abrir) acc.append(el('a', { class: 'btn mini secundario', href: info.abrir, target: '_blank', rel: 'noopener noreferrer' }, 'Abrir'));
+    if (navigator.share) acc.append(el('button', { class: 'btn mini secundario', type: 'button', onclick: () => navigator.share({ text: texto }).catch(() => {}) }, 'Compartir'));
+    cuerpo.append(acc);
+    return cuerpo;
+  }
+
+  // ---------- Historial (solo en este dispositivo) ----------
+  function leerHist() { try { return JSON.parse(localStorage.getItem(CLAVE_HIST)) || []; } catch { return []; } }
+  function guardarHist(h) {
+    try { localStorage.setItem(CLAVE_HIST, JSON.stringify(h.slice(0, MAX_HIST))); }
+    catch { try { localStorage.setItem(CLAVE_HIST, JSON.stringify(h.slice(0, 20).map((x) => ({ ...x, mini: '' })))); } catch {} }
+  }
+  function anadirHist(texto, mini, nombre) {
+    const h = leerHist().filter((x) => x.texto !== texto);
+    h.unshift({ texto, mini, nombre, fecha: Date.now() });
+    guardarHist(h); pintarHist();
+  }
+  const fmtFecha = new Intl.DateTimeFormat('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  function pintarHist() {
+    const h = leerHist(); const ul = $('historial'); ul.textContent = '';
+    $('historialVacio').hidden = h.length > 0; $('btnBorrar').hidden = h.length === 0;
+    for (const item of h) {
+      const li = el('li', { tabindex: '0', role: 'button', 'aria-label': 'Ver ' + item.texto.slice(0, 60) },
+        item.mini ? el('img', { src: item.mini, alt: '' }) : el('img', { alt: '' }),
+        el('div', { class: 'txt' },
+          el('div', { class: 'linea1' }, item.texto.replace(/\s+/g, ' ')),
+          el('div', { class: 'linea2' }, interpretar(item.texto).tipo + ' · ' + fmtFecha.format(item.fecha))));
+      const ver = () => {
+        $('secResultados').hidden = false; const cont = $('resultados'); cont.textContent = '';
+        cont.append(el('article', { class: 'resultado' }, tarjetaContenido(item.texto)));
+        $('secResultados').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      li.addEventListener('click', ver);
+      li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ver(); } });
+      ul.append(li);
+    }
+  }
+  $('btnBorrar').addEventListener('click', () => { $('confirmarBorrado').hidden = false; });
+  $('btnNoBorrar').addEventListener('click', () => { $('confirmarBorrado').hidden = true; });
+  $('btnSiBorrar').addEventListener('click', () => {
+    try { localStorage.removeItem(CLAVE_HIST); } catch {}
+    $('confirmarBorrado').hidden = true; pintarHist(); toast('Historial borrado');
+  });
+
+  // ---------- Procesar archivos ----------
+  async function procesar(archivos) {
+    archivos = [...archivos].filter((a) => a && a.type && a.type.startsWith('image/'));
+    if (!archivos.length) { estado('Eso no parece una imagen.', true); return; }
+    const cont = $('resultados'); cont.textContent = ''; $('secResultados').hidden = false;
+    let total = 0;
+    for (let i = 0; i < archivos.length; i++) {
+      const a = archivos[i];
+      estado(archivos.length > 1 ? `Analizando imagen ${i + 1} de ${archivos.length}…` : 'Analizando imagen…');
+      await new Promise((r) => setTimeout(r, 20)); // deja pintar el mensaje
+      let img;
+      try { img = await cargarImagen(a); } catch { cont.append(el('article', { class: 'resultado' }, el('div', { class: 'sin-qr' }, `No se pudo abrir «${a.name || 'imagen'}».`))); continue; }
+      const lista = await detectar(img);
+      const art = el('article', { class: 'resultado' }, el('div', { class: 'vista' }, vistaConMarcas(img, lista)));
+      if (!lista.length) {
+        art.append(el('div', { class: 'sin-qr' }, 'No se encontró ningún código QR. Prueba con una foto más cercana, enfocada y sin reflejos.'));
+      } else {
+        const mini = miniatura(img);
+        for (const r of lista) { art.append(tarjetaContenido(r.texto)); anadirHist(r.texto, mini, a.name || ''); }
+        total += lista.length;
+      }
+      cont.append(art);
+      if (img.close) try { img.close(); } catch {}
+    }
+    estado(total ? (total === 1 ? 'Se ha leído 1 código.' : `Se han leído ${total} códigos.`) : 'No se encontraron códigos QR.', !total);
+    $('secResultados').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  $('inCamara').addEventListener('change', (e) => { procesar(e.target.files); e.target.value = ''; });
+  $('inGaleria').addEventListener('change', (e) => { procesar(e.target.files); e.target.value = ''; });
+  const zona = $('zona');
+  ['dragenter', 'dragover'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); zona.classList.add('encima'); }));
+  ['dragleave', 'drop'].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || e.target === document.documentElement) zona.classList.remove('encima'); }));
+  document.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files.length) procesar(e.dataTransfer.files); });
+  document.addEventListener('paste', (e) => {
+    const files = [...(e.clipboardData ? e.clipboardData.items : [])].filter((i) => i.kind === 'file').map((i) => i.getAsFile());
+    if (files.length) procesar(files);
+  });
+
+  // ---------- Imagen compartida desde la galería (Android) ----------
+  (async () => {
+    if (!new URLSearchParams(location.search).has('compartido') || !('caches' in window)) return;
+    try {
+      const c = await caches.open('compartido'); const r = await c.match('./compartido-imagen');
+      if (r) { const blob = await r.blob(); await c.delete('./compartido-imagen'); procesar([new File([blob], 'compartida', { type: blob.type || 'image/jpeg' })]); }
+    } catch {}
+    history.replaceState(null, '', location.pathname);
+  })();
+
+  // ---------- Instalación PWA ----------
+  let eventoInstalar = null;
+  const instalada = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  const descartado = (() => { try { return localStorage.getItem('lectorqr-aviso-off') === '1'; } catch { return false; } })();
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault(); eventoInstalar = e;
+    if (!descartado) $('avisoInstalar').hidden = false;
+  });
+  const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (esIOS && !instalada && !descartado) {
+    $('textoInstalar').textContent = 'Para instalarla en el iPhone: pulsa Compartir y luego «Añadir a pantalla de inicio».';
+    $('btnInstalar').hidden = true; $('avisoInstalar').hidden = false;
+  }
+  $('btnInstalar').addEventListener('click', async () => {
+    if (!eventoInstalar) return;
+    eventoInstalar.prompt(); await eventoInstalar.userChoice.catch(() => {}); eventoInstalar = null;
+    $('avisoInstalar').hidden = true;
+  });
+  $('btnCerrarAviso').addEventListener('click', () => {
+    $('avisoInstalar').hidden = true; try { localStorage.setItem('lectorqr-aviso-off', '1'); } catch {}
+  });
+  window.addEventListener('appinstalled', () => { $('avisoInstalar').hidden = true; toast('App instalada'); });
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+
+  // ================= PESTAÑAS =================
+  function mostrarPestana(cual) {
+    const crear = cual === 'crear';
+    $('panelCrear').hidden = !crear; $('panelLeer').hidden = crear;
+    $('tabCrear').setAttribute('aria-selected', String(crear));
+    $('tabLeer').setAttribute('aria-selected', String(!crear));
+    if (crear) generarQR();
+    try { history.replaceState(null, '', crear ? '#crear' : location.pathname + location.search); } catch {}
+  }
+  $('tabLeer').addEventListener('click', () => mostrarPestana('leer'));
+  $('tabCrear').addEventListener('click', () => mostrarPestana('crear'));
+
+  // ================= CREAR QR =================
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8']; // acentos, ñ y emojis
+  let tipoActual = 'texto';
+  let qrActual = null; // { n, matriz, texto, color, pie }
+
+  $('tipos').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-tipo]'); if (!b) return;
+    tipoActual = b.dataset.tipo;
+    $('tipos').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('[data-para]').forEach((d) => { d.hidden = d.dataset.para !== tipoActual; });
+    generarQR();
+  });
+
+  const v = (id) => $(id).value.trim();
+  const escWifi = (s) => s.replace(/([\\;,:"])/g, '\\$1');
+  const escVcard = (s) => s.replace(/([\\;,])/g, '\\$1').replace(/\n/g, '\\n');
+
+  function textoDelFormulario() {
+    switch (tipoActual) {
+      case 'texto': return $('cTexto').value.trim();
+      case 'wifi': {
+        if (!v('cWifiRed')) return '';
+        const seg = $('cWifiSeg').value;
+        let s = `WIFI:T:${seg};S:${escWifi(v('cWifiRed'))};`;
+        if (seg !== 'nopass') s += `P:${escWifi($('cWifiClave').value)};`;
+        if ($('cWifiOculta').checked) s += 'H:true;';
+        return s + ';';
+      }
+      case 'contacto': {
+        const nom = v('cNombre'), ape = v('cApellidos');
+        if (!nom && !ape && !v('cTelC') && !v('cEmailC')) return '';
+        const l = ['BEGIN:VCARD', 'VERSION:3.0', `N:${escVcard(ape)};${escVcard(nom)};;;`, `FN:${escVcard((nom + ' ' + ape).trim())}`];
+        if (v('cEmpresa')) l.push('ORG:' + escVcard(v('cEmpresa')));
+        if (v('cCargo')) l.push('TITLE:' + escVcard(v('cCargo')));
+        if (v('cTelC')) l.push('TEL;TYPE=CELL:' + v('cTelC'));
+        if (v('cEmailC')) l.push('EMAIL:' + v('cEmailC'));
+        if (v('cWeb')) l.push('URL:' + v('cWeb'));
+        if (v('cDir')) l.push('ADR:;;' + escVcard(v('cDir')) + ';;;;');
+        l.push('END:VCARD');
+        return l.join('\n');
+      }
+      case 'tel': return v('cTel') ? 'tel:' + v('cTel').replace(/[^\d+]/g, '') : '';
+      case 'correo': {
+        if (!v('cPara')) return '';
+        const q = [];
+        if (v('cAsunto')) q.push('subject=' + encodeURIComponent(v('cAsunto')));
+        if (v('cCuerpo')) q.push('body=' + encodeURIComponent($('cCuerpo').value.trim()));
+        return 'mailto:' + v('cPara') + (q.length ? '?' + q.join('&') : '');
+      }
+      case 'sms': return v('cSmsTel') ? `SMSTO:${v('cSmsTel').replace(/[^\d+]/g, '')}:${$('cSmsTxt').value.trim()}` : '';
+    }
+    return '';
+  }
+
+  function generarQR() {
+    const texto = textoDelFormulario();
+    const pie = v('cPie');
+    $('pieQR').textContent = pie; $('pieQR').hidden = !pie;
+    if (!texto) {
+      qrActual = null; $('marcoQR').hidden = true; $('vacioQR').hidden = false; $('datosQR').textContent = '';
+      botonesCrear(false); return;
+    }
+    try {
+      const qr = qrcode(0, $('cNivel').value);
+      qr.addData(texto, 'Byte'); qr.make();
+      const n = qr.getModuleCount();
+      const matriz = []; for (let y = 0; y < n; y++) { const f = []; for (let x = 0; x < n; x++) f.push(qr.isDark(y, x)); matriz.push(f); }
+      qrActual = { n, matriz, texto, color: $('cColor').value || '#000000', pie };
+      $('imgQR').src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgQR(qrActual));
+      $('marcoQR').hidden = false; $('vacioQR').hidden = true;
+      const bytes = new TextEncoder().encode(texto).length;
+      $('datosQR').textContent = `Versión ${(n - 17) / 4} · ${n}×${n} módulos · ${bytes} bytes`;
+      botonesCrear(true);
+    } catch (err) {
+      qrActual = null; $('marcoQR').hidden = true; $('vacioQR').hidden = false; botonesCrear(false);
+      $('vacioQR').textContent = 'Demasiado texto para un solo QR. Acórtalo o baja la «resistencia a daños».';
+      $('datosQR').textContent = '';
+      return;
+    }
+    $('vacioQR').textContent = 'Rellena los datos y el código aparecerá aquí.';
+  }
+  function botonesCrear(activo) { ['btnImprimir', 'btnPNG', 'btnSVG', 'btnCompartirQR'].forEach((id) => { $(id).disabled = !activo; $(id).style.opacity = activo ? '' : '.45'; }); }
+
+  // SVG vectorial (nítido a cualquier tamaño) con margen de 4 módulos
+  function svgQR({ n, matriz, color }) {
+    const m = 4, t = n + 2 * m; let d = '';
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (matriz[y][x]) d += `M${x + m} ${y + m}h1v1h-1z`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${t} ${t}" shape-rendering="crispEdges"><rect width="${t}" height="${t}" fill="#fff"/><path d="${d}" fill="${color}"/></svg>`;
+  }
+
+  // PNG a alta resolución, con el texto al pie si lo hay
+  function canvasQR(lado = 1200) {
+    const { n, matriz, color, pie } = qrActual; const t = n + 8; const mod = Math.floor(lado / t); const tam = mod * t;
+    const altoPie = pie ? Math.round(tam * 0.11) : 0;
+    const c = document.createElement('canvas'); c.width = tam; c.height = tam + altoPie;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = color;
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (matriz[y][x]) ctx.fillRect((x + 4) * mod, (y + 4) * mod, mod, mod);
+    if (pie) {
+      let fs = Math.round(altoPie * 0.5);
+      ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      do { ctx.font = `600 ${fs}px system-ui, sans-serif`; fs -= 2; } while (ctx.measureText(pie).width > tam * 0.92 && fs > 10);
+      ctx.fillText(pie, tam / 2, tam - mod * 1.5 + altoPie / 2);
+    }
+    return c;
+  }
+  function nombreArchivo(ext) {
+    const base = (qrActual.pie || tipoActual).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 40) || 'codigo';
+    return `qr-${base}.${ext}`;
+  }
+  function descargar(blob, nombre) {
+    const url = URL.createObjectURL(blob); const a = el('a', { href: url, download: nombre });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  $('btnPNG').addEventListener('click', () => { if (!qrActual) return; canvasQR().toBlob((b) => { descargar(b, nombreArchivo('png')); toast('PNG guardado'); }, 'image/png'); });
+  $('btnSVG').addEventListener('click', () => { if (!qrActual) return; descargar(new Blob([svgQR(qrActual)], { type: 'image/svg+xml' }), nombreArchivo('svg')); toast('SVG guardado'); });
+  if (navigator.canShare) {
+    $('btnCompartirQR').hidden = false;
+    $('btnCompartirQR').addEventListener('click', () => {
+      if (!qrActual) return;
+      canvasQR().toBlob(async (b) => {
+        const f = new File([b], nombreArchivo('png'), { type: 'image/png' });
+        try { if (navigator.canShare({ files: [f] })) await navigator.share({ files: [f], title: 'Código QR' }); else descargar(b, f.name); } catch {}
+      }, 'image/png');
+    });
+  }
+
+  // Impresión: se monta la hoja con las copias pedidas y se abre el diálogo del sistema
+  $('btnImprimir').addEventListener('click', () => {
+    if (!qrActual) return;
+    const cm = parseFloat($('cTam').value.replace(',', '.'));
+    const mm = cm * 10, hueco = 8 + ($('cRecorte').checked ? 6 : 0), altoPie = qrActual.pie ? 8 : 0;
+    let copias = $('cCopias').value;
+    if (copias === 'max') {
+      const anchoUtil = 186, altoUtil = 273; // A4 menos márgenes
+      const cols = Math.max(1, Math.floor((anchoUtil + hueco) / (mm + hueco)));
+      const filas = Math.max(1, Math.floor((altoUtil + hueco) / (mm + altoPie + hueco)));
+      copias = cols * filas;
+    }
+    copias = Math.min(200, parseInt(copias, 10) || 1);
+    const zona = $('zonaImpresion'); zona.textContent = '';
+    zona.style.gap = hueco + 'mm';
+    const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgQR(qrActual));
+    for (let i = 0; i < copias; i++) {
+      const copia = el('div', { class: 'copia' + ($('cRecorte').checked ? ' recorte' : '') });
+      const img = el('img', { src, alt: '' }); img.style.width = img.style.height = cm + 'cm';
+      copia.append(img);
+      if (qrActual.pie) { const p = el('div', { class: 'pie' }, qrActual.pie); p.style.maxWidth = cm + 'cm'; if (cm < 4) p.style.fontSize = '7pt'; copia.append(p); }
+      zona.append(copia);
+    }
+    // Pequeña espera para que las imágenes estén listas antes de imprimir
+    setTimeout(() => {
+      try { window.print(); }
+      catch { toast('Tu navegador no permite imprimir aquí: usa «Guardar PNG» e imprímelo desde la galería'); }
+    }, 150);
+  });
+
+  $('formCrear').addEventListener('input', generarQR);
+  $('formCrear').addEventListener('change', generarQR);
+  $('formCrear').addEventListener('submit', (e) => e.preventDefault());
+
+  if (location.hash === '#crear') mostrarPestana('crear');
+  pintarHist();
+})();
+</script>
+</body>
+</html>
